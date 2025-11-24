@@ -1,139 +1,133 @@
 import streamlit as st
 import pandas as pd
-import json
 
-st.set_page_config(layout="wide", page_title="Physician Profiles")
-
-# -----------------------------
-# Load + Safe-Parse Data
-# -----------------------------
+# --------------------------------------------------------
+# LOAD CLEAN CSV
+# --------------------------------------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("profile_enrichment_base44.csv")
+    df = pd.read_csv("enrichment_clean.csv")
 
-    # Identify columns that contain JSON-like strings
-    json_cols = [
-        "work_experience",
-        "residency",
-        "medical_school",
-        "emails",
-        "insurance"
-    ]
+    # Guarantee consistent types
+    list_cols = ["work_experience", "residency", "medical_school", "emails", "insurance"]
+    for col in list_cols:
+        df[col] = df[col].apply(lambda x: [] if pd.isna(x) or x == "" else eval(x))
 
-    def safe_parse(val):
-        if pd.isna(val) or val == "" or val == "N/A":
-            return None
-        try:
-            return json.loads(val)
-        except:
-            return None
-
-    for col in json_cols:
-        if col in df.columns:
-            df[col] = df[col].apply(safe_parse)
-
+    # String fields
+    df["doximity"] = df["doximity"].fillna("")
+    df["linkedin"] = df["linkedin"].fillna("")
+    
     return df
-
 
 df = load_data()
 
-# -----------------------------
-# Sidebar: Dropdown Selector
-# -----------------------------
-st.sidebar.title("Select Physician")
-names = df["full_name"].tolist()
-selected_name = st.sidebar.selectbox("Choose a physician:", names)
+# Sorted alphabetical physician names
+physicians = sorted(df["full_name"].unique())
 
-# Get row
+# --------------------------------------------------------
+# SIDEBAR CONTROLS
+# --------------------------------------------------------
+st.sidebar.title("Select Physician")
+selected_name = st.sidebar.selectbox("Choose a physician:", physicians)
+
 row = df[df["full_name"] == selected_name].iloc[0]
 
+# --------------------------------------------------------
+# TITLE
+# --------------------------------------------------------
 st.title(selected_name)
 
-# -----------------------------
-# Render Sections
-# -----------------------------
-def render_section(title, records, icon=""):
-    st.subheader(f"{icon} {title}")
-
-    if not records:
-        st.write("N/A")
-        return
-
-    for item in records:
-        employer = item.get("employer", "N/A")
-        role = item.get("role", "N/A")
-        start = item.get("start", "N/A")
-        end = item.get("end", "N/A")
-        location = item.get("location", "N/A")
-        sources = item.get("source", [])
-
-        st.markdown(f"**{employer} — {role}**")
-        st.write(f"{start} → {end}")
-        st.write(location)
-
-        if sources:
-            for s in sources:
-                st.markdown(f"- [{s}]({s})")
-        st.markdown("---")
-
-
-# 3-column layout
+# --------------------------------------------------------
+# 3-COLUMN TOP SECTION
+# --------------------------------------------------------
 col1, col2, col3 = st.columns(3)
 
+# -------- WORK EXPERIENCE --------
 with col1:
-    render_section("Work Experience", row.get("work_experience"), "💼")
+    st.subheader("🧑‍⚕️ Work Experience")
+    if len(row.work_experience) == 0:
+        st.write("N/A")
+    else:
+        for w in row.work_experience:
+            st.markdown(f"**{w.get('employer','N/A')} — {w.get('role','N/A')}**")
+            st.write(f"{w.get('start','N/A')} → {w.get('end','N/A')}")
+            st.write(w.get("location","N/A"))
+            for link in w.get("source", []):
+                st.markdown(f"- [{link}]({link})")
 
+# -------- RESIDENCY --------
 with col2:
-    render_section("Residency", row.get("residency"), "🧑‍⚕️")
+    st.subheader("👨‍⚕️ Residency")
+    if len(row.residency) == 0:
+        st.write("N/A")
+    else:
+        for r in row.residency:
+            st.markdown(f"**{r.get('institution','N/A')}**")
+            st.write(f"{r.get('start_year','N/A')} → {r.get('end_year','N/A')}")
+            for link in r.get("source", []):
+                st.markdown(f"- [{link}]({link})")
 
+# -------- MED SCHOOL --------
 with col3:
-    render_section("Medical School", row.get("medical_school"), "🎓")
+    st.subheader("🎓 Medical School")
+    if len(row.medical_school) == 0:
+        st.write("N/A")
+    else:
+        for m in row.medical_school:
+            st.markdown(f"**{m.get('institution','N/A')}**")
+            st.write(f"{m.get('start_year','N/A')} → {m.get('end_year','N/A')}")
+            for link in m.get("source", []):
+                st.markdown(f"- [{link}]({link})")
 
-# -----------------------------
-# Additional Details
-# -----------------------------
-st.markdown("### Additional Details")
+# --------------------------------------------------------
+# ADDITIONAL DETAILS (BOTTOM SECTION)
+# --------------------------------------------------------
+st.markdown("---")
+st.subheader("Additional Details")
+ad1, ad2, ad3, ad4 = st.columns(4)
 
-npi = row.get("npi", "N/A")
-dox = row.get("doximity_url", "N/A")
-linkedin = row.get("linkedin_url", "N/A")
-emails = row.get("emails", None)
-insurance = row.get("insurance", None)
-
-colA, colB, colC, colD = st.columns(4)
-
-with colA:
+# NPI
+with ad1:
     st.write("**NPI**")
-    if npi and npi != "N/A":
-        st.markdown(f"[{npi}](https://npiregistry.cms.hhs.gov/provider-view/{npi})")
+    npi = str(row["npi"])
+    if npi != "nan":
+        st.markdown(f"[{npi}](https://npiregistry.cms.hhs.gov/registry/search-results-table?number={npi})")
     else:
         st.write("N/A")
 
-with colB:
+# Doximity
+with ad2:
     st.write("**Doximity**")
-    if isinstance(dox, str) and dox.startswith("http"):
-        st.markdown(f"[{dox}]({dox})")
+    if row["doximity"]:
+        st.markdown(f"[{row['doximity']}]({row['doximity']})")
     else:
         st.write("N/A")
 
-with colC:
+# LinkedIn
+with ad3:
     st.write("**LinkedIn**")
-    if isinstance(linkedin, str) and linkedin.startswith("http"):
-        st.markdown(f"[{linkedin}]({linkedin})")
+    if row["linkedin"]:
+        st.markdown(f"[{row['linkedin']}]({row['linkedin']})")
     else:
         st.write("N/A")
 
-with colD:
+# Emails & Insurance
+with ad4:
     st.write("**Emails & Insurance**")
 
-    if emails:
-        for e in emails:
-            st.markdown(f"- {e.get('email', 'N/A')} ({e.get('type','')})")
+    # Emails
+    st.write("**Emails:**")
+    if len(row.emails) == 0:
+        st.write("N/A")
     else:
-        st.write("Emails: N/A")
+        for e in row.emails:
+            st.write(f"- {e.get('email')} ({e.get('type')})")
 
-    if insurance:
-        for ins in insurance:
-            st.markdown(f"- {ins.get('insurance','N/A')}")
+    # Insurance
+    st.write("**Insurance:**")
+    if len(row.insurance) == 0:
+        st.write("N/A")
     else:
-        st.write("Insurance: N/A")
+        for i in row.insurance:
+            st.write(f"- {i.get('insurance')}")
+
