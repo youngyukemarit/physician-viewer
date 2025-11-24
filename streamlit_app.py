@@ -1,163 +1,185 @@
 import streamlit as st
 import pandas as pd
-import ast
 
-# ---------------------- CONFIG ----------------------
-st.set_page_config(page_title="Physician Viewer", layout="wide")
-
-
-# ---------------------- LOAD DATA ----------------------
+# -------------------------------
+# Load CSV
+# -------------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("profile_enrichment_base44.csv")
-    return df
+    return pd.read_csv("profile_enrichment_base44.csv")
 
 df = load_data()
 
-
-def parse_json_field(v):
-    if pd.isna(v) or v == "" or v == "[]":
+# Ensure consistent types
+def safe_list(x):
+    if pd.isna(x) or x == "":
         return []
     try:
-        return ast.literal_eval(v)
+        return eval(x)
     except:
         return []
 
+def safe_str(x):
+    return "" if pd.isna(x) else str(x)
 
-df["work_experience"] = df["work_experience"].apply(parse_json_field)
-df["residency"] = df["residency"].apply(parse_json_field)
-df["medical_school"] = df["medical_school"].apply(parse_json_field)
-df["insurance_accepted"] = df["insurance_accepted"].apply(parse_json_field)
-df["emails"] = df["emails"].apply(parse_json_field)
+df["work_experience"] = df["work_experience"].apply(safe_list)
+df["residency"] = df["residency"].apply(safe_list)
+df["medical_school"] = df["medical_school"].apply(safe_list)
+df["emails"] = df["emails"].apply(safe_list)
+df["insurance_accepted"] = df["insurance_accepted"].apply(safe_list)
 
-physicians = sorted(df["full_name"].tolist())
 
-# ---------------------- SIDEBAR: BEAUTIFUL CLICK LIST ----------------------
+# -------------------------------
+# Streamlit Layout
+# -------------------------------
+st.set_page_config(layout="wide", page_title="Physician Viewer")
 
 st.markdown(
-    """
-    <style>
-        .name-item {
-            padding: 10px 14px;
-            cursor: pointer;
-            border-radius: 6px;
-            margin-bottom: 4px;
-            font-size: 15px;
-        }
-        .name-item:hover {
-            background-color: #2c2c2c;
-        }
-        .name-item.selected {
-            background-color: #444;
-            font-weight: 600;
-        }
-    </style>
-    """,
-    unsafe_allow_html=True
+    "<h1 style='margin-bottom:0;'>Physician Profile Viewer</h1>",
+    unsafe_allow_html=True,
 )
 
-with st.sidebar:
-    st.markdown("### Physicians")
+# Sort by name for predictable ordering
+names = sorted(df["full_name"].unique())
 
-    # We store selected name in session state
-    if "selected_name" not in st.session_state:
-        st.session_state.selected_name = physicians[0]
+# Sidebar list (clickable, no radio button)
+st.sidebar.markdown("### Physicians")
+selected_name = st.sidebar.selectbox("", names, label_visibility="collapsed")
 
-    clicked = None
-    for name in physicians:
-        css_class = "name-item"
-        if name == st.session_state.selected_name:
-            css_class += " selected"
+row = df[df["full_name"] == selected_name].iloc[0]
 
-        if st.markdown(
-            f"<div class='{css_class}'>{name}</div>",
-            unsafe_allow_html=True
-        ):
-            pass
+# Determine index for navigation
+current_index = names.index(selected_name)
 
-        # Hack: detect click via unique key buttons
-        if st.button(name, key=name, help=name):
-            st.session_state.selected_name = name
+col_prev, col_next = st.columns([0.8, 0.2])
+with col_next:
+    if current_index < len(names) - 1:
+        if st.button("Next →"):
+            st.session_state["selected_name"] = names[current_index + 1]
+with col_prev:
+    if current_index > 0:
+        if st.button("← Prev"):
+            st.session_state["selected_name"] = names[current_index - 1]
 
-selected_name = st.session_state.selected_name
-record = df[df["full_name"] == selected_name].iloc[0]
+# Handle navigation persistence
+if "selected_name" in st.session_state:
+    selected_name = st.session_state["selected_name"]
+    row = df[df["full_name"] == selected_name].iloc[0]
+    # re-sync name list index
+    current_index = names.index(selected_name)
 
-# ---------------------- 3 COLUMN LAYOUT ----------------------
-left, middle, right = st.columns([1, 2.2, 1.2])
+
+# -------------------------------
+# Main Header
+# -------------------------------
+st.markdown(f"<h2 style='margin-top:20px;'>{row['full_name']}</h2>", unsafe_allow_html=True)
 
 
-# ---------------------- MIDDLE COLUMN (PRIMARY INFO) ----------------------
-with middle:
-    st.title(selected_name)
+# -------------------------------
+# 3-Column Compact Layout
+# -------------------------------
+colA, colB, colC = st.columns(3)
 
-    # --- WORK EXPERIENCE ---
-    st.subheader("🏢 Work Experience")
-    if not record["work_experience"]:
-        st.write("None")
-    else:
-        for job in record["work_experience"]:
-            st.markdown(f"**{job.get('employer', '')} — {job.get('role','')}**")
-            st.write(f"{job.get('start','')} → {job.get('end','')}")
-            if job.get("location"):
-                st.write(job["location"])
-            if job.get("source"):
-                for url in job["source"]:
-                    st.markdown(f"- [{url}]({url})")
+# ---- Work Experience ----
+with colA:
+    st.markdown("### 🧑‍⚕️ Work Experience")
+    if row["work_experience"]:
+        for exp in row["work_experience"]:
+            st.markdown(f"**{exp.get('employer','N/A')} — {exp.get('role','N/A')}**")
+            st.markdown(f"{exp.get('start','N/A')} → {exp.get('end','N/A')}")
+            st.markdown(f"{exp.get('location','N/A')}")
+            # sources
+            if "source" in exp and exp["source"]:
+                st.markdown(
+                    "<ul>" + "".join([f"<li><a href='{s}' target='_blank'>{s}</a></li>" for s in exp["source"]]) + "</ul>",
+                    unsafe_allow_html=True,
+                )
             st.markdown("---")
-
-    # --- RESIDENCY ---
-    st.subheader("🏥 Residency")
-    if not record["residency"]:
-        st.write("None")
     else:
-        for r in record["residency"]:
-            st.markdown(f"**{r.get('institution','')}**")
-            st.write(f"{r.get('start_year','')} → {r.get('end_year','')}")
-            for url in r.get("source", []):
-                st.markdown(f"- [{url}]({url})")
-            st.markdown("---")
+        st.markdown("N/A")
 
-    # --- MEDICAL SCHOOL ---
-    st.subheader("🎓 Medical School")
-    if not record["medical_school"]:
-        st.write("None")
+# ---- Residency ----
+with colB:
+    st.markdown("### 🏥 Residency")
+    if row["residency"]:
+        for res in row["residency"]:
+            st.markdown(f"**{res.get('institution','N/A')}**")
+            st.markdown(f"{res.get('start_year','N/A')} → {res.get('end_year','N/A')}")
+            if "source" in res and res["source"]:
+                st.markdown(
+                    "<ul>" + "".join([f"<li><a href='{s}' target='_blank'>{s}</a></li>" for s in res["source"]]) + "</ul>",
+                    unsafe_allow_html=True,
+                )
+            st.markdown("---")
     else:
-        for m in record["medical_school"]:
-            st.markdown(f"**{m.get('institution','')}**")
-            st.write(f"{m.get('start_year','')} → {m.get('end_year','')}")
-            for url in m.get("source", []):
-                st.markdown(f"- [{url}]({url})")
+        st.markdown("N/A")
+
+# ---- Medical School ----
+with colC:
+    st.markdown("### 🎓 Medical School")
+    if row["medical_school"]:
+        for edu in row["medical_school"]:
+            st.markdown(f"**{edu.get('institution','N/A')}**")
+            st.markdown(f"{edu.get('start_year','N/A')} → {edu.get('end_year','N/A')}")
+            if "source" in edu and edu["source"]:
+                st.markdown(
+                    "<ul>" + "".join([f"<li><a href='{s}' target='_blank'>{s}</a></li>" for s in edu["source"]]) + "</ul>",
+                    unsafe_allow_html=True,
+                )
             st.markdown("---")
+    else:
+        st.markdown("N/A")
 
 
-# ---------------------- RIGHT COLUMN (SECONDARY INFO) ----------------------
-with right:
-    st.subheader("ℹ️ Details")
+# -------------------------------
+# Secondary Horizontal Row
+# -------------------------------
+st.markdown("---")
+st.markdown("### Additional Details")
 
-    # NPI
+detA, detB, detC, detD, detE = st.columns(5)
+
+# NPI
+with detA:
+    st.markdown("**NPI**")
+    npi = safe_str(row["NPI"])
     st.markdown(
-        f"**NPI:** [{record['NPI']}](https://npiregistry.cms.hhs.gov/registry/NPI/{record['NPI']})"
+        f"<a href='https://npiregistry.cms.hhs.gov/registry/search-results-table?number={npi}' target='_blank'>{npi}</a>",
+        unsafe_allow_html=True,
     )
 
-    # Links
-    if record.get("doximity_url") not in ["", "N/A", None]:
-        st.markdown(f"**Doximity:** [{record['doximity_url']}]({record['doximity_url']})")
-
-    if record.get("linkedin_url") not in ["", "N/A", None]:
-        st.markdown(f"**LinkedIn:** [{record['linkedin_url']}]({record['linkedin_url']})")
-
-    # Emails
-    st.subheader("✉️ Emails")
-    if not record["emails"]:
-        st.write("None")
+# Doximity
+with detB:
+    st.markdown("**Doximity**")
+    link = safe_str(row["doximity_url"])
+    if link and link.lower() != "nan":
+        st.markdown(f"<a href='{link}' target='_blank'>{link}</a>", unsafe_allow_html=True)
     else:
-        for e in record["emails"]:
-            st.write(f"- {e}")
+        st.markdown("N/A")
 
-    # Insurance
-    st.subheader("🛡 Insurance")
-    if not record["insurance_accepted"]:
-        st.write("None")
+# LinkedIn
+with detC:
+    st.markdown("**LinkedIn**")
+    link = safe_str(row["linkedin_url"])
+    if link and link.lower() != "nan":
+        st.markdown(f"<a href='{link}' target='_blank'>{link}</a>", unsafe_allow_html=True)
     else:
-        for ins in record["insurance_accepted"]:
-            st.write(f"- {ins.get('insurance','')}")
+        st.markdown("N/A")
+
+# Emails
+with detD:
+    st.markdown("**Emails**")
+    if row["emails"]:
+        for e in row["emails"]:
+            st.markdown(f"- {e}")
+    else:
+        st.markdown("N/A")
+
+# Insurance
+with detE:
+    st.markdown("**Insurance**")
+    if row["insurance_accepted"]:
+        for ins in row["insurance_accepted"]:
+            st.markdown(f"- {ins}")
+    else:
+        st.markdown("N/A")
