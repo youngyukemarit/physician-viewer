@@ -2,140 +2,144 @@ import streamlit as st
 import pandas as pd
 import ast
 
-# -------------------------
-# Load data
-# -------------------------
+st.set_page_config(page_title="Physician Viewer", layout="wide")
+
+# =========================
+# Load CSV
+# =========================
 @st.cache_data
 def load_data():
+    # IMPORTANT: This loads the CSV from your GitHub repo
     df = pd.read_csv("enrichment_clean.csv")
 
-    # Parse JSON-like columns safely
+    # Columns with JSON-like strings
+    json_cols = ["work_experience", "residency", "medical_school",
+                 "emails", "insurance", "sources"]
+
     def parse_json(x):
-        if pd.isna(x) or x == "" or x == "[]":
-            return []
+        if pd.isna(x) or x == "":
+            return None
         try:
             return ast.literal_eval(x)
         except:
-            return []
+            return None
 
-    df["cleaned.work_experience"] = df["cleaned.work_experience"].apply(parse_json)
-    df["cleaned.residency"] = df["cleaned.residency"].apply(parse_json)
-
-    # medical school is a dict-like object
-    def parse_dict(x):
-        if pd.isna(x) or x == "" or x == "{}":
-            return {}
-        try:
-            return ast.literal_eval(x)
-        except:
-            return {}
-
-    df["cleaned.medical_school"] = df["cleaned.medical_school"].apply(parse_dict)
-
-    # emails + insurance are lists
-    df["cleaned.emails"] = df["cleaned.emails"].apply(parse_json)
-    df["cleaned.insurance_accepted"] = df["cleaned.insurance_accepted"].apply(parse_json)
+    for col in json_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(parse_json)
 
     return df
 
 
 df = load_data()
 
-# -------------------------------------------------------------------
-#  UI SETUP
-# -------------------------------------------------------------------
-
-st.set_page_config(page_title="Physician Profiles", layout="wide")
-
 st.title("📘 Physician Profile Viewer")
 
-# Dropdown list of names
-physician_list = sorted(df["cleaned.full_name"].fillna("Unknown").tolist())
-selected_name = st.selectbox("Choose Physician", physician_list)
+# =========================
+# Dropdown
+# =========================
+if "cleaned.full_name" not in df.columns:
+    st.error("Column 'cleaned.full_name' not found in CSV. Please confirm CSV headers.")
+    st.stop()
+
+df = df.sort_values("cleaned.full_name")
+names = df["cleaned.full_name"].fillna("Unknown").tolist()
+
+selected_name = st.selectbox("Select a physician:", names)
 
 row = df[df["cleaned.full_name"] == selected_name].iloc[0]
 
-# -------------------------------------------------------------------
-#  MAIN LAYOUT
-# -------------------------------------------------------------------
-col1, col2, col3 = st.columns([1, 1, 1])
+# =========================
+# Render Helpers
+# =========================
+def section(title, content):
+    st.subheader(title)
+    if not content:
+        st.write("N/A")
+    else:
+        for item in content:
+            if isinstance(item, dict):
+                st.write("• " + ", ".join(f"{k}: {v}" for k, v in item.items()))
+            else:
+                st.write("• " + str(item))
 
-# -------------------------
-#  LEFT COLUMN — WORK EXPERIENCE
-# -------------------------
+def link(label, url):
+    if url and isinstance(url, str) and url.startswith("http"):
+        st.write(f"**{label}:** [{url}]({url})")
+    else:
+        st.write(f"**{label}:** N/A")
+
+# =========================
+# Top 3 Columns
+# =========================
+col1, col2, col3 = st.columns(3)
+
 with col1:
-    st.subheader("🏥 Work Experience")
-    work = row["cleaned.work_experience"]
-    if not work:
-        st.write("N/A")
-    else:
-        for job in work:
-            employer = job.get("employer", "N/A")
-            role = job.get("role", "N/A")
-            years = job.get("years", "N/A")
-            st.markdown(f"• **{role}** — {employer} ({years})")
+    section("🧑‍⚕️ Work Experience", row.get("work_experience"))
 
-# -------------------------
-#  MIDDLE COLUMN — RESIDENCY
-# -------------------------
 with col2:
-    st.subheader("🎓 Residency")
-    residency = row["cleaned.residency"]
-    if not residency:
-        st.write("N/A")
-    else:
-        for r in residency:
-            inst = r.get("institution", "N/A")
-            year = r.get("year", "N/A")
-            st.markdown(f"• **{inst}** ({year})")
+    section("🎓 Residency", row.get("residency"))
 
-# -------------------------
-#  RIGHT COLUMN — MEDICAL SCHOOL
-# -------------------------
 with col3:
-    st.subheader("🏫 Medical School")
-    school = row["cleaned.medical_school"]
-    if not school:
-        st.write("N/A")
+    section("🏥 Education", row.get("medical_school"))
+
+st.markdown("---")
+
+# =========================
+# Quick Details Row
+# =========================
+st.subheader("Quick Details")
+
+npi = row.get("npi")
+npi_link = (
+    f"https://npiregistry.cms.hhs.gov/registry/search-results-table?number={npi}"
+    if pd.notna(npi)
+    else None
+)
+
+c1, c2, c3, c4, c5 = st.columns(5)
+
+with c1:
+    link("NPI", npi_link)
+
+with c2:
+    link("Doximity", row.get("doximity_url"))
+
+with c3:
+    link("LinkedIn", row.get("linkedin_url"))
+
+with c4:
+    st.write("**Emails:**")
+    if row.get("emails"):
+        for e in row.emails:
+            st.write("•", e)
     else:
-        name = school.get("name", "N/A")
-        year = school.get("year", "N/A")
-        st.markdown(f"**{name}** ({year})")
+        st.write("N/A")
 
-# -------------------------------------------------------------------
-# BELOW: LINKS + EMAILS + INSURANCE
-# -------------------------------------------------------------------
-st.divider()
-st.subheader("🔗 Profile Links & Details")
+with c5:
+    st.write("**Insurance:**")
+    if row.get("insurance"):
+        for ins in row.insurance:
+            st.write("•", ins)
+    else:
+        st.write("N/A")
 
-# NPI
-npi = row["npi"]
-st.markdown(f"**NPI:** [{npi}](https://npiregistry.cms.hhs.gov/provider-view/{npi})")
+st.markdown("---")
 
-# LinkedIn
-linkedin = row["cleaned.linkedin_url.url"]
-if pd.notna(linkedin) and linkedin != "N/A":
-    st.markdown(f"**LinkedIn:** [{linkedin}]({linkedin})")
+# =========================
+# Source Citations
+# =========================
+st.subheader("Source Citations")
+
+if row.get("sources"):
+    for source in row.sources:
+        if isinstance(source, dict) and "url" in source:
+            url = source["url"]
+            if isinstance(url, str) and url.startswith("http"):
+                st.write(f"• [{url}]({url})")
+            else:
+                st.write("• " + str(url))
+        else:
+            st.write("• " + str(source))
 else:
-    st.write("**LinkedIn:** N/A")
-
-# Doximity
-dox = row["cleaned.doximity_url.url"]
-if pd.notna(dox) and dox != "N/A":
-    st.markdown(f"**Doximity:** [{dox}]({dox})")
-else:
-    st.write("**Doximity:** N/A")
-
-# Emails
-emails = row["cleaned.emails"]
-if emails:
-    st.markdown("**Emails:**<br>" + "<br>".join(emails), unsafe_allow_html=True)
-else:
-    st.write("**Emails:** N/A")
-
-# Insurance
-ins = row["cleaned.insurance_accepted"]
-if ins:
-    st.markdown("**Insurance Accepted:**<br>" + "<br>".join(ins), unsafe_allow_html=True)
-else:
-    st.write("**Insurance Accepted:** N/A")
+    st.write("N/A")
