@@ -2,144 +2,119 @@ import streamlit as st
 import pandas as pd
 import ast
 
-st.set_page_config(page_title="Physician Viewer", layout="wide")
-
-# =========================
+# -------------------------
 # Load CSV
-# =========================
+# -------------------------
 @st.cache_data
 def load_data():
-    # IMPORTANT: This loads the CSV from your GitHub repo
     df = pd.read_csv("enrichment_clean.csv")
 
-    # Columns with JSON-like strings
-    json_cols = ["work_experience", "residency", "medical_school",
-                 "emails", "insurance", "sources"]
-
-    def parse_json(x):
+    # Safe parser for list/dict fields
+    def parse(x):
         if pd.isna(x) or x == "":
             return None
         try:
             return ast.literal_eval(x)
         except:
-            return None
+            return x
 
-    for col in json_cols:
+    list_fields = [
+        "cleaned.work_experience",
+        "cleaned.residency",
+        "cleaned.medical_school",
+        "cleaned.emails",
+        "cleaned.insurance_accepted",
+    ]
+
+    for col in list_fields:
         if col in df.columns:
-            df[col] = df[col].apply(parse_json)
+            df[col] = df[col].apply(parse)
+        else:
+            df[col] = None
 
     return df
 
 
 df = load_data()
 
+st.set_page_config(page_title="Physician Viewer", layout="wide")
+
 st.title("📘 Physician Profile Viewer")
+st.write("Select a physician to view enrichment results.")
 
-# =========================
-# Dropdown
-# =========================
-if "cleaned.full_name" not in df.columns:
-    st.error("Column 'cleaned.full_name' not found in CSV. Please confirm CSV headers.")
-    st.stop()
+# --------------------------------
+# Left column: dropdown
+# --------------------------------
+left, right = st.columns([1, 3])
 
-df = df.sort_values("cleaned.full_name")
-names = df["cleaned.full_name"].fillna("Unknown").tolist()
+with left:
+    all_names = sorted(df["raw.name"].fillna("Unknown").tolist())
+    selected_name = st.selectbox("Choose Physician:", all_names, index=0)
 
-selected_name = st.selectbox("Select a physician:", names)
+row = df[df["raw.name"] == selected_name].iloc[0]
 
-row = df[df["cleaned.full_name"] == selected_name].iloc[0]
-
-# =========================
-# Render Helpers
-# =========================
-def section(title, content):
-    st.subheader(title)
-    if not content:
+# --------------------------------
+# Utility renderers
+# --------------------------------
+def render_list(label, data):
+    st.subheader(label)
+    if data is None or data == []:
         st.write("N/A")
     else:
-        for item in content:
-            if isinstance(item, dict):
-                st.write("• " + ", ".join(f"{k}: {v}" for k, v in item.items()))
-            else:
-                st.write("• " + str(item))
+        for item in data:
+            st.write(f"- {item}")
 
-def link(label, url):
-    if url and isinstance(url, str) and url.startswith("http"):
-        st.write(f"**{label}:** [{url}]({url})")
-    else:
-        st.write(f"**{label}:** N/A")
+# --------------------------------
+# Main Layout
+# --------------------------------
+with right:
+    st.header(selected_name)
 
-# =========================
-# Top 3 Columns
-# =========================
-col1, col2, col3 = st.columns(3)
+    col1, col2, col3 = st.columns(3)
 
-with col1:
-    section("🧑‍⚕️ Work Experience", row.get("work_experience"))
+    # Work Experience
+    with col1:
+        render_list("Work Experience", row["cleaned.work_experience"])
 
-with col2:
-    section("🎓 Residency", row.get("residency"))
+    # Residency
+    with col2:
+        render_list("Residency", row["cleaned.residency"])
 
-with col3:
-    section("🏥 Education", row.get("medical_school"))
+    # Medical School
+    with col3:
+        render_list("Medical School", row["cleaned.medical_school"])
 
-st.markdown("---")
+    st.markdown("---")
 
-# =========================
-# Quick Details Row
-# =========================
-st.subheader("Quick Details")
+    # -------------------------
+    # Extra Information
+    # -------------------------
+    st.subheader("Details")
 
-npi = row.get("npi")
-npi_link = (
-    f"https://npiregistry.cms.hhs.gov/registry/search-results-table?number={npi}"
-    if pd.notna(npi)
-    else None
-)
-
-c1, c2, c3, c4, c5 = st.columns(5)
-
-with c1:
-    link("NPI", npi_link)
-
-with c2:
-    link("Doximity", row.get("doximity_url"))
-
-with c3:
-    link("LinkedIn", row.get("linkedin_url"))
-
-with c4:
+    st.write(f"**NPI:** {row['npi']}")
+    
+    # Email list
+    emails = row["cleaned.emails"]
     st.write("**Emails:**")
-    if row.get("emails"):
-        for e in row.emails:
-            st.write("•", e)
+    if emails:
+        for e in emails:
+            st.write(f"- {e}")
     else:
         st.write("N/A")
 
-with c5:
+    ins = row["cleaned.insurance_accepted"]
     st.write("**Insurance:**")
-    if row.get("insurance"):
-        for ins in row.insurance:
-            st.write("•", ins)
+    if ins:
+        for i in ins:
+            st.write(f"- {i}")
     else:
         st.write("N/A")
 
-st.markdown("---")
+    # Links
+    st.write("**Doximity:**")
+    dox = row["cleaned.doximity_url.url"]
+    st.write(dox if isinstance(dox, str) and dox.startswith("http") else "N/A")
 
-# =========================
-# Source Citations
-# =========================
-st.subheader("Source Citations")
-
-if row.get("sources"):
-    for source in row.sources:
-        if isinstance(source, dict) and "url" in source:
-            url = source["url"]
-            if isinstance(url, str) and url.startswith("http"):
-                st.write(f"• [{url}]({url})")
-            else:
-                st.write("• " + str(url))
-        else:
-            st.write("• " + str(source))
-else:
-    st.write("N/A")
+    st.write("**LinkedIn:**")
+    li = row["cleaned.linkedin_url.url"]
+    st.write(li if isinstance(li, str) and li.startswith("http") else "N/A")
