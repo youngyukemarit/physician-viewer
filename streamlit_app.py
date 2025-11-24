@@ -1,185 +1,171 @@
 import streamlit as st
 import pandas as pd
 
-# -------------------------------
-# Load CSV
-# -------------------------------
+st.set_page_config(layout="wide", page_title="Physician Profiles")
+
+# ------------------------------
+# Load data
+# ------------------------------
 @st.cache_data
 def load_data():
-    return pd.read_csv("profile_enrichment_base44.csv")
+    df = pd.read_csv("profile_enrichment_base44.csv")
+    return df
 
 df = load_data()
 
-# Ensure consistent types
-def safe_list(x):
-    if pd.isna(x) or x == "":
-        return []
+# Guarantee list ordering stability
+names = df["full_name"].tolist()
+
+# ------------------------------
+# Sidebar – full list clickable
+# ------------------------------
+st.sidebar.title("Physicians")
+
+if "index" not in st.session_state:
+    st.session_state.index = 0
+
+# clickable list
+for i, name in enumerate(names):
+    selected = (i == st.session_state.index)
+    label = f"👉 {name}" if selected else name
+
+    if st.sidebar.button(label, key=f"name_{i}"):
+        st.session_state.index = i
+
+# Navigation buttons
+col_nav1, col_nav2 = st.columns([1, 1])
+if col_nav1.button("← Previous"):
+    st.session_state.index = (st.session_state.index - 1) % len(df)
+if col_nav2.button("Next →"):
+    st.session_state.index = (st.session_state.index + 1) % len(df)
+
+# Current row
+row = df.iloc[st.session_state.index]
+
+st.title(row.full_name)
+
+# ------------------------------
+# 3-column compact layout
+# ------------------------------
+col1, col2, col3 = st.columns(3)
+
+def render_work_experience(col, row):
+    col.subheader("👨‍⚕️ Work Experience")
+    if pd.isna(row.work_experience_json) or row.work_experience_json.strip() == "[]":
+        col.write("N/A")
+        return
+
     try:
-        return eval(x)
+        import ast
+        items = ast.literal_eval(row.work_experience_json)
     except:
-        return []
+        col.write("N/A")
+        return
 
-def safe_str(x):
-    return "" if pd.isna(x) else str(x)
-
-df["work_experience"] = df["work_experience"].apply(safe_list)
-df["residency"] = df["residency"].apply(safe_list)
-df["medical_school"] = df["medical_school"].apply(safe_list)
-df["emails"] = df["emails"].apply(safe_list)
-df["insurance_accepted"] = df["insurance_accepted"].apply(safe_list)
-
-
-# -------------------------------
-# Streamlit Layout
-# -------------------------------
-st.set_page_config(layout="wide", page_title="Physician Viewer")
-
-st.markdown(
-    "<h1 style='margin-bottom:0;'>Physician Profile Viewer</h1>",
-    unsafe_allow_html=True,
-)
-
-# Sort by name for predictable ordering
-names = sorted(df["full_name"].unique())
-
-# Sidebar list (clickable, no radio button)
-st.sidebar.markdown("### Physicians")
-selected_name = st.sidebar.selectbox("", names, label_visibility="collapsed")
-
-row = df[df["full_name"] == selected_name].iloc[0]
-
-# Determine index for navigation
-current_index = names.index(selected_name)
-
-col_prev, col_next = st.columns([0.8, 0.2])
-with col_next:
-    if current_index < len(names) - 1:
-        if st.button("Next →"):
-            st.session_state["selected_name"] = names[current_index + 1]
-with col_prev:
-    if current_index > 0:
-        if st.button("← Prev"):
-            st.session_state["selected_name"] = names[current_index - 1]
-
-# Handle navigation persistence
-if "selected_name" in st.session_state:
-    selected_name = st.session_state["selected_name"]
-    row = df[df["full_name"] == selected_name].iloc[0]
-    # re-sync name list index
-    current_index = names.index(selected_name)
+    for exp in items:
+        col.markdown(f"**{exp.get('employer','')} — {exp.get('role','')}**")
+        if exp.get("start") or exp.get("end"):
+            col.write(f"{exp.get('start','')} → {exp.get('end','')}")
+        if exp.get("location"):
+            col.write(exp["location"])
+        for src in exp.get("source", []):
+            col.markdown(f"- [{src}]({src})")
+        col.markdown("---")
 
 
-# -------------------------------
-# Main Header
-# -------------------------------
-st.markdown(f"<h2 style='margin-top:20px;'>{row['full_name']}</h2>", unsafe_allow_html=True)
+def render_residency(col, row):
+    col.subheader("🏥 Residency")
+    try:
+        import ast
+        items = ast.literal_eval(row.residency_json)
+    except:
+        items = []
+
+    if not items:
+        col.write("N/A")
+        return
+
+    for r in items:
+        col.markdown(f"**{r.get('institution','')}**")
+        col.write(f"{r.get('start_year','')} → {r.get('end_year','')}")
+        for src in r.get("source", []):
+            col.markdown(f"- [{src}]({src})")
+        col.markdown("---")
 
 
-# -------------------------------
-# 3-Column Compact Layout
-# -------------------------------
-colA, colB, colC = st.columns(3)
+def render_school(col, row):
+    col.subheader("🎓 Medical School")
+    try:
+        import ast
+        items = ast.literal_eval(row.medical_school_json)
+    except:
+        items = []
 
-# ---- Work Experience ----
-with colA:
-    st.markdown("### 🧑‍⚕️ Work Experience")
-    if row["work_experience"]:
-        for exp in row["work_experience"]:
-            st.markdown(f"**{exp.get('employer','N/A')} — {exp.get('role','N/A')}**")
-            st.markdown(f"{exp.get('start','N/A')} → {exp.get('end','N/A')}")
-            st.markdown(f"{exp.get('location','N/A')}")
-            # sources
-            if "source" in exp and exp["source"]:
-                st.markdown(
-                    "<ul>" + "".join([f"<li><a href='{s}' target='_blank'>{s}</a></li>" for s in exp["source"]]) + "</ul>",
-                    unsafe_allow_html=True,
-                )
-            st.markdown("---")
-    else:
-        st.markdown("N/A")
+    if not items:
+        col.write("N/A")
+        return
 
-# ---- Residency ----
-with colB:
-    st.markdown("### 🏥 Residency")
-    if row["residency"]:
-        for res in row["residency"]:
-            st.markdown(f"**{res.get('institution','N/A')}**")
-            st.markdown(f"{res.get('start_year','N/A')} → {res.get('end_year','N/A')}")
-            if "source" in res and res["source"]:
-                st.markdown(
-                    "<ul>" + "".join([f"<li><a href='{s}' target='_blank'>{s}</a></li>" for s in res["source"]]) + "</ul>",
-                    unsafe_allow_html=True,
-                )
-            st.markdown("---")
-    else:
-        st.markdown("N/A")
-
-# ---- Medical School ----
-with colC:
-    st.markdown("### 🎓 Medical School")
-    if row["medical_school"]:
-        for edu in row["medical_school"]:
-            st.markdown(f"**{edu.get('institution','N/A')}**")
-            st.markdown(f"{edu.get('start_year','N/A')} → {edu.get('end_year','N/A')}")
-            if "source" in edu and edu["source"]:
-                st.markdown(
-                    "<ul>" + "".join([f"<li><a href='{s}' target='_blank'>{s}</a></li>" for s in edu["source"]]) + "</ul>",
-                    unsafe_allow_html=True,
-                )
-            st.markdown("---")
-    else:
-        st.markdown("N/A")
+    for m in items:
+        col.markdown(f"**{m.get('school','')}**")
+        col.write(f"{m.get('start_year','')} → {m.get('end_year','')}")
+        for src in m.get("source", []):
+            col.markdown(f"- [{src}]({src})")
+        col.markdown("---")
 
 
-# -------------------------------
-# Secondary Horizontal Row
-# -------------------------------
+render_work_experience(col1, row)
+render_residency(col2, row)
+render_school(col3, row)
+
+# ------------------------------
+# Additional Details (horizontal)
+# ------------------------------
 st.markdown("---")
-st.markdown("### Additional Details")
-
-detA, detB, detC, detD, detE = st.columns(5)
+st.subheader("Additional Details")
+colA, colB, colC, colD, colE = st.columns(5)
 
 # NPI
-with detA:
-    st.markdown("**NPI**")
-    npi = safe_str(row["NPI"])
-    st.markdown(
-        f"<a href='https://npiregistry.cms.hhs.gov/registry/search-results-table?number={npi}' target='_blank'>{npi}</a>",
-        unsafe_allow_html=True,
-    )
+npi_url = f"https://npiregistry.cms.hhs.gov/registry/search?number={row.NPI}"
+colA.markdown("### NPI")
+colA.markdown(f"[{row.NPI}]({npi_url})")
 
 # Doximity
-with detB:
-    st.markdown("**Doximity**")
-    link = safe_str(row["doximity_url"])
-    if link and link.lower() != "nan":
-        st.markdown(f"<a href='{link}' target='_blank'>{link}</a>", unsafe_allow_html=True)
-    else:
-        st.markdown("N/A")
+colB.markdown("### Doximity")
+if pd.notna(row.doximity_url) and row.doximity_url != "nan":
+    colB.markdown(f"[{row.doximity_url}]({row.doximity_url})")
+else:
+    colB.write("N/A")
 
 # LinkedIn
-with detC:
-    st.markdown("**LinkedIn**")
-    link = safe_str(row["linkedin_url"])
-    if link and link.lower() != "nan":
-        st.markdown(f"<a href='{link}' target='_blank'>{link}</a>", unsafe_allow_html=True)
-    else:
-        st.markdown("N/A")
+colC.markdown("### LinkedIn")
+if pd.notna(row.linkedin_url) and row.linkedin_url != "nan":
+    colC.markdown(f"[{row.linkedin_url}]({row.linkedin_url})")
+else:
+    colC.write("N/A")
 
 # Emails
-with detD:
-    st.markdown("**Emails**")
-    if row["emails"]:
-        for e in row["emails"]:
-            st.markdown(f"- {e}")
-    else:
-        st.markdown("N/A")
+colD.markdown("### Emails")
+try:
+    import ast
+    emails = ast.literal_eval(row.emails_json)
+except:
+    emails = []
+
+if emails:
+    for e in emails:
+        colD.markdown(f"- **{e.get('email','')}** ({e.get('type','')})")
+else:
+    colD.write("N/A")
 
 # Insurance
-with detE:
-    st.markdown("**Insurance**")
-    if row["insurance_accepted"]:
-        for ins in row["insurance_accepted"]:
-            st.markdown(f"- {ins}")
-    else:
-        st.markdown("N/A")
+colE.markdown("### Insurance")
+try:
+    insurance = ast.literal_eval(row.insurance_json)
+except:
+    insurance = []
+
+if insurance:
+    for ins in insurance:
+        colE.markdown(f"- {ins.get('insurance','')}")
+else:
+    colE.write("N/A")
