@@ -2,161 +2,138 @@ import streamlit as st
 import pandas as pd
 import json
 
-st.set_page_config(
-    page_title="Physician Profile Viewer",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+st.set_page_config(layout="wide", page_title="Physician Profiles")
 
 # -----------------------------
-# Load Data
+# Load + Safe-Parse Data
 # -----------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("profile_enrichment_base44.csv")
 
-    # Parse JSON fields safely
-    json_cols = ["work_experience", "residency", "medical_school", "emails", "insurance"]
+    # Identify columns that contain JSON-like strings
+    json_cols = [
+        "work_experience",
+        "residency",
+        "medical_school",
+        "emails",
+        "insurance"
+    ]
+
+    def safe_parse(val):
+        if pd.isna(val) or val == "" or val == "N/A":
+            return None
+        try:
+            return json.loads(val)
+        except:
+            return None
 
     for col in json_cols:
-        def safe_parse(val):
-            if pd.isna(val) or val.strip() == "" or val.strip() == "[]":
-                return []
-            try:
-                return json.loads(val)
-            except:
-                return []
-
-        df[col] = df[col].apply(safe_parse)
+        if col in df.columns:
+            df[col] = df[col].apply(safe_parse)
 
     return df
+
 
 df = load_data()
 
 # -----------------------------
-# Sidebar Selector
+# Sidebar: Dropdown Selector
 # -----------------------------
 st.sidebar.title("Select Physician")
+names = df["full_name"].tolist()
+selected_name = st.sidebar.selectbox("Choose a physician:", names)
 
-names = sorted(df["full_name"].unique())
-selected_name = st.sidebar.selectbox(
-    "Choose a physician:",
-    names,
-    index=0,
-)
-
+# Get row
 row = df[df["full_name"] == selected_name].iloc[0]
 
-# -----------------------------
-# Page Title
-# -----------------------------
-st.markdown(f"# {selected_name}")
+st.title(selected_name)
 
 # -----------------------------
-# Helper Renderers
+# Render Sections
 # -----------------------------
-def render_experience(items):
-    if not items:
+def render_section(title, records, icon=""):
+    st.subheader(f"{icon} {title}")
+
+    if not records:
         st.write("N/A")
         return
-    for item in items:
+
+    for item in records:
         employer = item.get("employer", "N/A")
         role = item.get("role", "N/A")
         start = item.get("start", "N/A")
         end = item.get("end", "N/A")
-        location = item.get("location", "")
+        location = item.get("location", "N/A")
+        sources = item.get("source", [])
+
         st.markdown(f"**{employer} — {role}**")
         st.write(f"{start} → {end}")
-        if location:
-            st.write(location)
-        links = item.get("source", [])
-        for l in links:
-            st.markdown(f"- [{l}]({l})")
-        st.write("---")
+        st.write(location)
+
+        if sources:
+            for s in sources:
+                st.markdown(f"- [{s}]({s})")
+        st.markdown("---")
 
 
-def render_school(items):
-    if not items:
-        st.write("N/A")
-        return
-    for item in items:
-        inst = item.get("institution", "N/A")
-        start = item.get("start_year", "N/A")
-        end = item.get("end_year", "N/A")
-        st.markdown(f"**{inst}**")
-        st.write(f"{start} → {end}")
-
-        links = item.get("source", [])
-        for l in links:
-            st.markdown(f"- [{l}]({l})")
-        st.write("---")
-
-
-# -----------------------------
-# 3 Column Layout
-# -----------------------------
+# 3-column layout
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.subheader("🧑‍⚕️ Work Experience")
-    render_experience(row.work_experience)
+    render_section("Work Experience", row.get("work_experience"), "💼")
 
 with col2:
-    st.subheader("🏥 Residency")
-    render_school(row.residency)
+    render_section("Residency", row.get("residency"), "🧑‍⚕️")
 
 with col3:
-    st.subheader("🎓 Medical School")
-    render_school(row.medical_school)
+    render_section("Medical School", row.get("medical_school"), "🎓")
 
 # -----------------------------
 # Additional Details
 # -----------------------------
-st.write("---")
-st.subheader("Additional Details")
+st.markdown("### Additional Details")
 
-npi = str(row["npi"])
+npi = row.get("npi", "N/A")
 dox = row.get("doximity_url", "N/A")
 linkedin = row.get("linkedin_url", "N/A")
-
-# Emails
-emails = row.emails if isinstance(row.emails, list) else []
-ins = row.insurance if isinstance(row.insurance, list) else []
+emails = row.get("emails", None)
+insurance = row.get("insurance", None)
 
 colA, colB, colC, colD = st.columns(4)
 
 with colA:
-    st.markdown("**NPI**")
-    st.markdown(f"[{npi}](https://npiregistry.cms.hhs.gov/registry/npi/{npi})")
+    st.write("**NPI**")
+    if npi and npi != "N/A":
+        st.markdown(f"[{npi}](https://npiregistry.cms.hhs.gov/provider-view/{npi})")
+    else:
+        st.write("N/A")
 
 with colB:
-    st.markdown("**Doximity**")
+    st.write("**Doximity**")
     if isinstance(dox, str) and dox.startswith("http"):
         st.markdown(f"[{dox}]({dox})")
     else:
         st.write("N/A")
 
 with colC:
-    st.markdown("**LinkedIn**")
+    st.write("**LinkedIn**")
     if isinstance(linkedin, str) and linkedin.startswith("http"):
         st.markdown(f"[{linkedin}]({linkedin})")
     else:
         st.write("N/A")
 
 with colD:
-    st.markdown("**Emails & Insurance**")
+    st.write("**Emails & Insurance**")
 
     if emails:
-        st.write("**Emails:**")
         for e in emails:
-            st.write(f"- {e.get('email', 'N/A')}")
+            st.markdown(f"- {e.get('email', 'N/A')} ({e.get('type','')})")
     else:
         st.write("Emails: N/A")
 
-    st.write("")
-    if ins:
-        st.write("**Insurance:**")
-        for i in ins:
-            st.write(f"- {i.get('insurance', 'N/A')}")
+    if insurance:
+        for ins in insurance:
+            st.markdown(f"- {ins.get('insurance','N/A')}")
     else:
         st.write("Insurance: N/A")
