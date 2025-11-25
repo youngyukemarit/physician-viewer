@@ -2,6 +2,39 @@ import streamlit as st
 import pandas as pd
 import ast
 
+st.set_page_config(page_title="Physician Profile Viewer", layout="wide")
+
+# ---- Light theme override (no logic changes) ----
+st.markdown("""
+<style>
+    /* Make background light */
+    .stApp {
+        background-color: #FAFAFA !important;
+        color: #222222 !important;
+    }
+
+    /* Main content container spacing */
+    .block-container {
+        padding-top: 1.5rem !important;
+        padding-bottom: 2rem !important;
+    }
+
+    /* Make selectbox look light */
+    div[data-baseweb="select"] > div {
+        background-color: #FFFFFF !important;
+        color: #222222 !important;
+        border-radius: 6px !important;
+        border: 1px solid #CCCCCC !important;
+    }
+
+    /* Fix dropdown text color */
+    div[data-baseweb="select"] span {
+        color: #222222 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
 # -------------------------
 # Load Data
 # -------------------------
