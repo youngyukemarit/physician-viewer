@@ -64,19 +64,19 @@ html, body, [class*="st-"] {
 st.markdown("<h1 style='font-weight:700;'>📘 Physician Profile Viewer</h1>", unsafe_allow_html=True)
 
 # -------------------------
-# Dropdown + Next/Prev Navigation (stable)
+# Dropdown + Next/Prev Navigation (clean UI)
 # -------------------------
 physicians = sorted(df["cleaned.name"].fillna("Unknown").unique().tolist())
 
-# Initialize index on first load
+# Initialize index
 if "selected_index" not in st.session_state:
     st.session_state.selected_index = 0
 
-# Keep index synced with dropdown selection
 def choose_physician():
     st.session_state.selected_index = physicians.index(st.session_state.selected_name)
 
-col_dd, col_arrows = st.columns([0.33, 0.67])
+# Row layout: dropdown on left, arrows far right
+col_dd, col_spacer, col_prev, col_next = st.columns([0.33, 0.47, 0.10, 0.10])
 
 with col_dd:
     st.selectbox(
@@ -87,16 +87,32 @@ with col_dd:
         on_change=choose_physician
     )
 
-with col_arrows:
-    col_prev, col_next = st.columns([0.1, 0.1])
-    with col_prev:
-        if st.button("⬅️ Prev", use_container_width=True):
-            st.session_state.selected_index = max(0, st.session_state.selected_index - 1)
-    with col_next:
-        if st.button("Next ➡️", use_container_width=True):
-            st.session_state.selected_index = min(len(physicians) - 1, st.session_state.selected_index + 1)
+# Light-mode button styling
+light_btn_css = """
+<style>
+div.stButton > button {
+    background-color: #FFFFFF !important;
+    color: #222222 !important;
+    border: 1px solid #CCCCCC !important;
+    border-radius: 6px !important;
+}
+div.stButton > button:hover {
+    background-color: #F0F0F0 !important;
+}
+</style>
+"""
+st.markdown(light_btn_css, unsafe_allow_html=True)
+
+with col_prev:
+    if st.button("⬅️ Prev", use_container_width=True):
+        st.session_state.selected_index = max(0, st.session_state.selected_index - 1)
+
+with col_next:
+    if st.button("Next ➡️", use_container_width=True):
+        st.session_state.selected_index = min(len(physicians) - 1, st.session_state.selected_index + 1)
 
 selected_name = physicians[st.session_state.selected_index]
+
 
 # -------------------------
 # Select row
