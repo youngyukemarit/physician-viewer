@@ -33,7 +33,7 @@ st.markdown("""
 @st.cache_data
 def load_data():
     # IMPORTANT: expects enrichment_v6_clean.csv in the SAME FOLDER
-    df = pd.read_csv("enrichment_v6_clean.csv")
+    df = pd.read_csv("v6_viewer/enrichment_v6_clean.csv")
 
     list_columns = [
         "cleaned.work_experience",
