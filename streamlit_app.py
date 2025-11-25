@@ -4,16 +4,15 @@ import ast
 
 st.set_page_config(page_title="Physician Profile Viewer", layout="wide")
 
-# -------------------------
-# Load data
-# -------------------------
-
+# -----------------------------
+# Load Data
+# -----------------------------
 @st.cache_data
 def load_data():
     df = pd.read_csv("enrichment_clean.csv")
 
-    # Columns that contain python-like lists or dicts
-    complex_cols = [
+    # Parse JSON-like list columns
+    list_cols = [
         "cleaned.work_experience",
         "cleaned.residency",
         "cleaned.medical_school",
@@ -22,130 +21,122 @@ def load_data():
     ]
 
     def safe_parse(x):
-        if pd.isna(x) or x in ["", "[]", "{}", "N/A"]:
+        if pd.isna(x) or str(x).strip() in ["", "nan", "None"]:
             return []
         try:
             return ast.literal_eval(x)
-        except:
+        except Exception:
             return []
 
-    for c in complex_cols:
-        df[c] = df[c].apply(safe_parse)
+    for col in list_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(safe_parse)
 
     return df
 
+
 df = load_data()
 
-# -------------------------
-# UI Header
-# -------------------------
-
+# -----------------------------
+# Sidebar / Selector
+# -----------------------------
 st.title("📘 Physician Profile Viewer")
-st.caption("Select a physician to view enrichment results.")
 
-# Dropdown sorted by name
-names = sorted(df["cleaned.name"].fillna("Unknown").tolist())
-selected_name = st.selectbox("Choose Physician:", names)
+# Build list of names for dropdown
+if "cleaned.name" in df.columns:
+    dropdown_options = df["cleaned.name"].tolist()
+else:
+    dropdown_options = df["raw.name"].tolist()
+
+selected_name = st.selectbox("Choose Physician:", dropdown_options)
 
 row = df[df["cleaned.name"] == selected_name].iloc[0]
 
-st.markdown(f"## {row['cleaned.name']}")
-
-# -------------------------
-# Section helpers
-# -------------------------
-
-def render_experience(items):
+# -----------------------------
+# Helper functions
+# -----------------------------
+def render_list(items):
     if not items:
-        st.write("N/A")
-        return
-    for item in items:
-        employer = item.get("employer", "N/A")
-        role = item.get("role", "N/A")
-        start = item.get("start", "N/A")
-        end = item.get("end", "N/A")
-        location = item.get("location", "N/A")
-        st.markdown(
-            f"**{employer} — {role}**  \n"
-            f"{start} → {end}  \n"
-            f"{location}"
-        )
-        # Sources
-        for src in item.get("source", []):
-            st.markdown(f"- [{src}]({src})")
-        st.markdown("---")
+        return "N/A"
+    out = ""
+    for it in items:
+        if isinstance(it, dict):
+            out += f"- " + ", ".join([f"**{k.capitalize()}**: {v}" for k, v in it.items() if v]) + "\n"
+        else:
+            out += f"- {it}\n"
+    return out
 
-def render_education(items):
+def render_links(items):
     if not items:
-        st.write("N/A")
-        return
-    for item in items:
-        inst = item.get("institution", "N/A")
-        start = item.get("start_year", "N/A")
-        end = item.get("end_year", "N/A")
-        st.markdown(f"**{inst}**  \n{start} → {end}")
-        for src in item.get("source", []):
-            st.markdown(f"- [{src}]({src})")
-        st.markdown("---")
+        return "N/A"
+    out = ""
+    for it in items:
+        if isinstance(it, str) and it.startswith("http"):
+            out += f"- [{it}]({it})\n"
+        elif isinstance(it, dict):
+            for v in it.values():
+                if isinstance(v, str) and v.startswith("http"):
+                    out += f"- [{v}]({v})\n"
+    return out if out else "N/A"
 
-# -------------------------
-# Display 3 columns
-# -------------------------
+# -----------------------------
+# PAGE LAYOUT
+# -----------------------------
+name = row["cleaned.name"]
+npi = str(row["cleaned.npi"])
 
-col1, col2, col3 = st.columns(3)
+work = row["cleaned.work_experience"]
+residency = row["cleaned.residency"]
+school = row["cleaned.medical_school"]
+emails = row["cleaned.emails"]
+insurance = row["cleaned.insurance_accepted"]
+linkedin = row.get("cleaned.linkedin_url.url", "N/A")
+dox = row.get("cleaned.doximity_url.url", "N/A")
+
+st.header(name)
+
+# 3 column layout for sections
+col1, col2, col3 = st.columns(3, gap="large")
 
 with col1:
     st.subheader("💼 Work Experience")
-    render_experience(row["cleaned.work_experience"])
+    st.markdown(render_list(work))
 
 with col2:
     st.subheader("👨‍⚕️ Residency")
-    render_education(row["cleaned.residency"])
+    st.markdown(render_list(residency))
 
 with col3:
     st.subheader("🎓 Medical School")
-    render_education(row["cleaned.medical_school"])
-
-# -------------------------
-# Details Section
-# -------------------------
+    st.markdown(render_list(school))
 
 st.markdown("---")
 st.subheader("Details")
 
-# NPI
-npi = row["cleaned.npi"]
-st.markdown(f"**NPI:** [{npi}](https://npiregistry.cms.hhs.gov/registry/{npi})")
+# -----------------------------
+# FIXED NPI LINK  ✔✔✔
+# -----------------------------
+st.write(f"**NPI:** [{npi}](https://npiregistry.cms.hhs.gov/provider/{npi})")
 
 # Emails
-emails = row["cleaned.emails"]
-if not emails:
-    st.markdown("**Emails:** N/A")
+if emails and isinstance(emails, list):
+    st.write("**Emails:**")
+    st.markdown(render_links(emails))
 else:
-    st.markdown("**Emails:**")
-    for e in emails:
-        st.markdown(f"- {e.get('email')} ({e.get('type')})")
+    st.write("**Emails:** N/A")
 
-# Insurance
-ins = row["cleaned.insurance_accepted"]
-if not ins:
-    st.markdown("**Insurance:** N/A")
-else:
-    st.markdown("**Insurance:**")
-    for i in ins:
-        ins_name = i.get("insurance", "N/A")
-        st.markdown(f"- {ins_name}")
+# Insurance  
+st.write("**Insurance:**")
+st.markdown(render_list(insurance))
 
-# Doximity
-dox = row.get("cleaned.doximity_url.url", "N/A")
-if pd.isna(dox) or dox in ["", "N/A"]:
-    st.markdown("**Doximity:** N/A")
+# Doximity  
+if isinstance(dox, str) and dox.startswith("http"):
+    st.write(f"**Doximity:** [{dox}]({dox})")
 else:
-    st.markdown(f"**Doximity:** [{dox}]({dox})")
+    st.write("**Doximity:** N/A")
 
-# LinkedIn
-linkedin = row.get("cleaned.linkedin_url.url", "N/A")
-if pd.isna(linkedin) or linkedin in ["", "N/A"]:
-    st.markdown("**LinkedIn:** N/A")
+# LinkedIn  
+if isinstance(linkedin, str) and linkedin.startswith("http"):
+    st.write(f"**LinkedIn:** [{linkedin}]({linkedin})")
 else:
-    st.markdown(f"**LinkedIn:** [{linkedin}]({linkedin})")
+    st.write("**LinkedIn:** N/A")
