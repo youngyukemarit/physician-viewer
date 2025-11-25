@@ -2,161 +2,233 @@ import streamlit as st
 import pandas as pd
 import ast
 
-# -------------------------------
-# UI CONFIG
-# -------------------------------
-st.set_page_config(
-    page_title="Physician Profile Viewer",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+# =========================
+# SAFE PARSING HELPERS
+# =========================
 
-st.markdown("""
-<style>
-    body { background-color: #fafafa !important; }
-    .block-container { padding-top: 1rem !important; }
-</style>
-""", unsafe_allow_html=True)
+def safe_parse(x):
+    if pd.isna(x) or x in ["", "nan", None]:
+        return []
+    try:
+        return ast.literal_eval(str(x))
+    except:
+        return []
 
-# -------------------------------
-# LOAD CSV
-# -------------------------------
+def pick_value(row, keys, default="N/A"):
+    for c in keys:
+        if c in row and not pd.isna(row[c]):
+            val = str(row[c]).strip()
+            if val not in ["", "nan", "None"]:
+                return val
+    return default
+
+
+# =========================
+# LOAD DATA (SAFE)
+# =========================
+
 @st.cache_data
 def load_data():
     df = pd.read_csv("enrichment_clean.csv")
 
-    # Columns containing list/dict-like strings
-    json_cols = [
-        "cleaned.work_experience",
-        "cleaned.residency",
-        "cleaned.medical_school",
-        "cleaned.insurance_accepted",
+    list_cols = [
+        "cleaned.work_experience", "cleaned.residency",
+        "cleaned.medical_school", "cleaned.insurance_accepted",
         "cleaned.emails"
     ]
 
-    def try_parse(x):
-        if pd.isna(x) or x == "" or x in ["[]", "{}", "None"]:
-            return []
-        try:
-            return ast.literal_eval(x)
-        except:
-            return []
-
-    for c in json_cols:
-        if c in df.columns:
-            df[c] = df[c].apply(try_parse)
+    for col in list_cols:
+        if col in df.columns:
+            df[col] = df[col].apply(safe_parse)
 
     return df
 
+
 df = load_data()
 
-# -------------------------------
-# MAIN HEADER
-# -------------------------------
+# Build physician list: "NAME — NPI"
+df["display"] = df["cleaned.name"] + " — " + df["cleaned.npi"].astype(str)
+physician_list = df["display"].tolist()
+
+
+# =========================
+# SESSION STATE INDEX
+# =========================
+
+if "index" not in st.session_state:
+    st.session_state.index = 0
+
+
+# =========================
+# CSS — LIGHT MODE + FONTS + DROPDOWN WIDTH
+# =========================
+
+st.markdown("""
+<style>
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+html, body, [data-testid="stAppViewContainer"] {
+    background-color: #ffffff !important;
+    color: #222 !important;
+    font-family: 'Inter', sans-serif !important;
+}
+
+/* dropdown width */
+.dropdown-container {
+    width: 33% !important;
+}
+
+/* remove dark background on selectbox */
+.stSelectbox > div > div {
+    background-color: #ffffff !important;
+    color: #222 !important;
+    border: 1px solid #ccc !important;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+
+# =========================
+# PAGE HEADER
+# =========================
+
 st.title("📘 Physician Profile Viewer")
 
-# -------------------------------
-# DROPDOWN
-# -------------------------------
-if "cleaned.name" not in df.columns:
-    st.error("CSV missing `cleaned.name` column.")
-    st.stop()
 
-physicians = sorted(df["cleaned.name"].tolist())
+# =========================
+# TOP BAR: DROPDOWN + NAV BUTTONS
+# =========================
 
-selected_name = st.selectbox(
-    "Choose Physician:",
-    physicians,
-    index=0
-)
+colA, colB, colC = st.columns([2, 0.25, 0.25])
 
-row = df[df["cleaned.name"] == selected_name].iloc[0]
+with colA:
+    st.markdown('<div class="dropdown-container">', unsafe_allow_html=True)
+    selected = st.selectbox("Choose Physician:", physician_list,
+                            index=st.session_state.index)
+    st.markdown('</div>', unsafe_allow_html=True)
 
-# -------------------------------
-# HELPER: display list of dicts
-# -------------------------------
-def render_section(list_of_dicts):
-    if not list_of_dicts:
+# compute current index
+current_index = physician_list.index(selected)
+
+
+with colB:
+    if st.button("← Prev", use_container_width=True):
+        st.session_state.index = max(current_index - 1, 0)
+        st.experimental_rerun()
+
+with colC:
+    if st.button("Next →", use_container_width=True):
+        st.session_state.index = min(current_index + 1, len(physician_list)-1)
+        st.experimental_rerun()
+
+
+# =========================
+# SELECTED RECORD
+# =========================
+
+row = df.iloc[current_index]
+
+name = row["cleaned.name"]
+npi = str(row["cleaned.npi"])
+
+st.header(name)
+
+
+# =========================
+# FORMAT WORK EXPERIENCE BLOCKS
+# =========================
+
+def render_experience_block(items):
+    if not items:
         st.write("N/A")
         return
 
-    for item in list_of_dicts:
-        line = ""
-        for key, val in item.items():
-            if key == "source":
-                continue  # don't display confidence/source junk
-            if isinstance(val, str) and val.strip() == "":
-                continue
-            line += f"**{key.replace('_',' ').title()}**: {val} — "
-        if line.endswith(" — "):
-            line = line[:-3]
-        st.markdown(f"- {line}")
+    for exp in items:
+        employer = exp.get("employer", "N/A")
+        role = exp.get("role", "N/A")
+        start = exp.get("start", "N/A")
+        end = exp.get("end", "N/A")
+        location = exp.get("location", "N/A")
+        srcs = exp.get("source", [])
 
-        # Sources as links
-        if "source" in item:
-            for src in item["source"]:
-                st.markdown(f"  • [{src}]({src})")
+        st.markdown(f"""
+        **Employer:** {employer}  
+        **Role:** {role}  
+        **Start:** {start}  
+        **End:** {end}  
+        **Location:** {location}
+        """)
 
-# -------------------------------
-# MAIN DISPLAY
-# -------------------------------
-st.markdown(f"## {row['cleaned.name']}")
+        for s in srcs:
+            st.markdown(f"- [{s}]({s})")
+
+        st.write("---")
+
+
+# =========================
+# 3 COLUMN SECTIONS
+# =========================
 
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    st.markdown("### 💼 Work Experience")
-    render_section(row["cleaned.work_experience"])
+    st.subheader("🧳 Work Experience")
+    render_experience_block(row["cleaned.work_experience"])
 
 with col2:
-    st.markdown("### 🧑‍⚕️ Residency")
-    render_section(row["cleaned.residency"])
+    st.subheader("👨‍⚕️ Residency")
+    render_experience_block(row["cleaned.residency"])
 
 with col3:
-    st.markdown("### 🎓 Medical School")
-    render_section(row["cleaned.medical_school"])
+    st.subheader("🎓 Medical School")
+    render_experience_block(row["cleaned.medical_school"])
 
-st.markdown("---")
-st.markdown("## Details")
 
-colA, colB, colC, colD, colE = st.columns(5)
+# =========================
+# DETAILS SECTION
+# =========================
 
-# NPI
-with colA:
-    st.markdown("**NPI**")
-    npi = str(row["cleaned.npi"])
-    st.markdown(f"[{npi}](https://npiregistry.cms.hhs.gov/provider-view/{npi})")
+st.subheader("Details")
+
+# NPI → FIXED URL (correct provider-view page)
+npi_url = f"https://npiregistry.cms.hhs.gov/provider-view/{npi}"
+st.markdown(f"**NPI:** [{npi}]({npi_url})")
+
+# LinkedIn fix (no hyperlink for nan)
+linkedin = pick_value(row, ["cleaned.linkedin_url.url", "raw.linkedin_url.url"])
+if linkedin.lower() in ["nan", "n/a", "none", ""]:
+    linkedin_display = "N/A"
+else:
+    linkedin_display = f"[{linkedin}]({linkedin})"
+
+st.markdown(f"**LinkedIn:** {linkedin_display}")
 
 # Doximity
-with colB:
-    st.markdown("**Doximity**")
-    dox = row["cleaned.doximity_url.url"] if "cleaned.doximity_url.url" in row else "N/A"
-    st.markdown(dox if dox == "N/A" else f"[{dox}]({dox})")
-
-# LinkedIn
-with colC:
-    st.markdown("**LinkedIn**")
-    li = row["cleaned.linkedin_url.url"] if "cleaned.linkedin_url.url" in row else "N/A"
-    st.markdown(li if li == "N/A" else f"[{li}]({li})")
+dox = pick_value(row, ["cleaned.doximity_url.url"])
+if dox not in ["N/A", "nan", "None", ""]:
+    st.markdown(f"**Doximity:** [{dox}]({dox})")
+else:
+    st.markdown("**Doximity:** N/A")
 
 # Emails
-with colD:
-    st.markdown("**Emails**")
-    emails = row["cleaned.emails"]
-    if not emails:
-        st.write("N/A")
-    else:
-        for e in emails:
-            st.markdown(f"- {e.get('email','N/A')}")
+emails = row["cleaned.emails"]
+if not emails:
+    st.markdown("**Emails:** N/A")
+else:
+    for e in emails:
+        st.markdown(f"- {e}")
 
 # Insurance
-with colE:
-    st.markdown("**Insurance**")
-    ins = row["cleaned.insurance_accepted"]
-    if not ins:
-        st.write("N/A")
-    else:
-        for i in ins:
-            st.markdown(f"- {i.get('insurance','N/A')}")
-            for src in i.get("source", []):
-                st.markdown(f"  • [{src}]({src})")
+insurance = row["cleaned.insurance_accepted"]
+if not insurance:
+    st.markdown("**Insurance:** N/A")
+else:
+    st.markdown("**Insurance:**")
+    for ins in insurance:
+        ins_name = ins.get("insurance", "N/A")
+        ins_srcs = ins.get("source", [])
+        st.write(f"- {ins_name}")
+        for s in ins_srcs:
+            st.markdown(f"  • [{s}]({s})")
