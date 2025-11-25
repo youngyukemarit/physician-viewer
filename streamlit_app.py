@@ -4,36 +4,28 @@ import ast
 
 st.set_page_config(page_title="Physician Profile Viewer", layout="wide")
 
-# ---- Light theme override (no logic changes) ----
+# ---- Light theme override ----
 st.markdown("""
 <style>
-    /* Make background light */
     .stApp {
         background-color: #FAFAFA !important;
         color: #222222 !important;
     }
-
-    /* Main content container spacing */
     .block-container {
         padding-top: 1.5rem !important;
         padding-bottom: 2rem !important;
     }
-
-    /* Make selectbox look light */
     div[data-baseweb="select"] > div {
         background-color: #FFFFFF !important;
         color: #222222 !important;
         border-radius: 6px !important;
         border: 1px solid #CCCCCC !important;
     }
-
-    /* Fix dropdown text color */
     div[data-baseweb="select"] span {
         color: #222222 !important;
     }
 </style>
 """, unsafe_allow_html=True)
-
 
 # -------------------------
 # Load Data
@@ -42,7 +34,6 @@ st.markdown("""
 def load_data():
     df = pd.read_csv("enrichment_clean.csv")
 
-    # Parse list-like fields safely
     list_columns = [
         "cleaned.work_experience",
         "cleaned.residency",
@@ -59,43 +50,61 @@ def load_data():
 df = load_data()
 
 # -------------------------
-# Apply Inter (MaritHealth font)
+# Font
 # -------------------------
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
-
 html, body, [class*="st-"] {
     font-family: 'Inter', sans-serif !important;
 }
-
 </style>
 """, unsafe_allow_html=True)
-
-# -------------------------
-# Light Mode
-# -------------------------
-st.set_page_config(layout="wide")
 
 st.markdown("<h1 style='font-weight:700;'>📘 Physician Profile Viewer</h1>", unsafe_allow_html=True)
 
 # -------------------------
-# Dropdown (1/3 width, alphabetical, no NPI)
+# Dropdown + Next/Prev Navigation (stable)
 # -------------------------
 physicians = sorted(df["cleaned.name"].fillna("Unknown").unique().tolist())
 
-col_dd, col_spacer = st.columns([0.33, 0.67])  # dropdown takes 33%
+# Initialize index on first load
+if "selected_index" not in st.session_state:
+    st.session_state.selected_index = 0
+
+# Keep index synced with dropdown selection
+def choose_physician():
+    st.session_state.selected_index = physicians.index(st.session_state.selected_name)
+
+col_dd, col_arrows = st.columns([0.33, 0.67])
 
 with col_dd:
-    selected_name = st.selectbox("Choose Physician:", physicians)
+    st.selectbox(
+        "Choose Physician:",
+        physicians,
+        key="selected_name",
+        index=st.session_state.selected_index,
+        on_change=choose_physician
+    )
+
+with col_arrows:
+    col_prev, col_next = st.columns([0.1, 0.1])
+    with col_prev:
+        if st.button("⬅️ Prev", use_container_width=True):
+            st.session_state.selected_index = max(0, st.session_state.selected_index - 1)
+    with col_next:
+        if st.button("Next ➡️", use_container_width=True):
+            st.session_state.selected_index = min(len(physicians) - 1, st.session_state.selected_index + 1)
+
+selected_name = physicians[st.session_state.selected_index]
 
 # -------------------------
-# Select row for physician
+# Select row
 # -------------------------
 row = df[df["cleaned.name"] == selected_name].iloc[0]
 
 # -------------------------
-# Helper to render sections
+# Section renderer
 # -------------------------
 def show_section(title, items):
     st.markdown(f"<h3 style='margin-top:20px;'>{title}</h3>", unsafe_allow_html=True)
@@ -114,12 +123,12 @@ def show_section(title, items):
             st.write("- " + entry["source"][0])
 
 # -------------------------
-# Display name
+# Name
 # -------------------------
 st.markdown(f"<h2 style='margin-top:10px;'>{row['cleaned.name']}</h2>", unsafe_allow_html=True)
 
 # -------------------------
-# Work Experience / Residency / Medical School columns
+# Columns for Experience / Residency / Medical School
 # -------------------------
 col1, col2, col3 = st.columns(3)
 
