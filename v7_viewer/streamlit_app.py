@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import ast
 
-st.set_page_config(page_title="Physician Profile Viewer", layout="wide")
+st.set_page_config(page_title="Physician Profile Viewer (V7) - Gemini", layout="wide")
 
 # ---- Light theme override ----
 st.markdown("""
