@@ -33,7 +33,7 @@ st.markdown("""
 @st.cache_data
 def load_data():
     # FIX 1: Change to the newly created, clean file
-    df = pd.read_csv("viewer_data.csv")
+    df = pd.read_csv("v7_viewer/viewer_data.csv")
 
     # FIX 2: Only include the columns we actually have and parse them
     list_columns = [
