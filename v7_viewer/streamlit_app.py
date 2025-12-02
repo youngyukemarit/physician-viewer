@@ -32,7 +32,7 @@ st.markdown("""
 # -------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("v7_viewer/viewer_data.csv")
+    df = pd.read_csv("viewer_data.csv")
 
     list_columns = [
         "cleaned.work_experience",
@@ -71,22 +71,19 @@ physicians = sorted(df["cleaned.name"].fillna("Unknown").unique().tolist())
 if "selected_index" not in st.session_state:
     st.session_state.selected_index = 0
 
-if "selected_name" not in st.session_state or st.session_state.selected_name not in physicians:
-    st.session_state.selected_name = physicians[st.session_state.selected_index]
-
-
-# We REMOVE the choose_physician() function and its on_change call.
+# We no longer rely on 'selected_name' in session state to avoid the API conflict.
+# The selected name is derived from the index OR the selectbox's direct output.
 
 
 # Row layout: dropdown on left, arrows far right
 col_dd, col_spacer, col_prev, col_next = st.columns([0.33, 0.47, 0.10, 0.10])
 
 with col_dd:
-    # Use selected_index for the index, and bind the result to the key
-    st.selectbox(
+    # We use a temporary key for the selectbox output
+    selected_name_from_dd = st.selectbox(
         "Choose Physician:",
         physicians,
-        key="selected_name",
+        # REMOVED: key="selected_name" to avoid conflict
         index=st.session_state.selected_index
     )
 
@@ -107,22 +104,32 @@ div.stButton > button:hover {
 st.markdown(light_btn_css, unsafe_allow_html=True)
 
 
-# Navigation buttons: NOW THEY MANUALLY UPDATE BOTH STATE KEYS FOR RELIABILITY
+# Navigation buttons: Manually update the index ONLY.
 with col_prev:
     if st.button("⬅️ Prev", use_container_width=True):
         new_index = max(0, st.session_state.selected_index - 1)
         st.session_state.selected_index = new_index
-        st.session_state.selected_name = physicians[new_index] # Manually force the name update
+        # We rely on the selectbox index update for the next run
 
 with col_next:
     if st.button("Next ➡️", use_container_width=True):
         new_index = min(len(physicians) - 1, st.session_state.selected_index + 1)
         st.session_state.selected_index = new_index
-        st.session_state.selected_name = physicians[new_index] # Manually force the name update
+        # We rely on the selectbox index update for the next run
 
 
-# Read the selected name directly from the state managed by the selectbox/buttons
-selected_name = st.session_state.selected_name
+# Determine the final selected name based on the latest interaction
+# If the index was manually set (button click), use the index to find the name.
+# Otherwise, use the output of the selectbox.
+if st.session_state.selected_index != physicians.index(selected_name_from_dd):
+    # This means a button was clicked, so update the index based on the selectbox output
+    selected_name = physicians[st.session_state.selected_index]
+else:
+    # No button was clicked, so use the selectbox's current value
+    selected_name = selected_name_from_dd
+
+# Now, ensure the selected_index reflects the selected_name for the next run
+st.session_state.selected_index = physicians.index(selected_name)
 
 
 # -------------------------
@@ -131,7 +138,7 @@ selected_name = st.session_state.selected_name
 row = df[df["cleaned.name"] == selected_name].iloc[0]
 
 # -------------------------
-# Section renderer
+# Section renderer (Unchanged)
 # -------------------------
 def show_section(title, items):
     st.markdown(f"<h3 style='margin-top:20px;'>{title}</h3>", unsafe_allow_html=True)
@@ -156,7 +163,7 @@ def show_section(title, items):
 st.markdown(f"<h2 style='margin-top:10px;'>{row['cleaned.name']}</h2>", unsafe_allow_html=True)
 
 # -------------------------
-# Columns for Experience / Residency / Medical School
+# Columns for Experience / Residency / Medical School (Unchanged)
 # -------------------------
 col1, col2, col3 = st.columns(3)
 
