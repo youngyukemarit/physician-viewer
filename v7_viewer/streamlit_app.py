@@ -32,7 +32,7 @@ st.markdown("""
 # -------------------------
 @st.cache_data
 def load_data():
-    # Load the newly created, clean file which now includes citations
+    # Load the clean file
     df = pd.read_csv("v7_viewer/viewer_data.csv")
 
     # List of columns that contain string representations of Python lists/dictionaries
@@ -40,12 +40,11 @@ def load_data():
         "cleaned.work_experience",
         "cleaned.residency",
         "cleaned.medical_school",
-        "cleaned.citations" # INCLUDE THE NEW CITATIONS COLUMN
+        "cleaned.citations"
     ]
 
     for col in list_columns:
-        # The data is a string representation of a list of dicts: '[{"employer": ...}]'
-        # ast.literal_eval safely converts this string back to a Python object.
+        # ast.literal_eval safely converts the string literal back to a Python object.
         df[col] = df[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith("[") else [])
 
     return df
@@ -68,11 +67,11 @@ html, body, [class*="st-"] {
 st.markdown("<h1 style='font-weight:700;'>📘 Physician Profile Viewer</h1>", unsafe_allow_html=True)
 
 # -------------------------
-# Dropdown + Next/Prev Navigation (Robust Initialization)
+# Dropdown + Next/Prev Navigation (FINAL ROBUST VERSION)
 # -------------------------
 physicians = sorted(df["cleaned.name"].fillna("Unknown").unique().tolist())
 
-# Robust Initialization to prevent the AttributeError on initial load
+# Robust Initialization to prevent the initial AttributeError
 if "selected_index" not in st.session_state:
     st.session_state.selected_index = 0
 
@@ -81,7 +80,7 @@ if "selected_name" not in st.session_state or st.session_state.selected_name not
 
 
 def choose_physician():
-    # When the user changes the box, we update the index based on the new name
+    # This callback only runs when the selectbox value changes via user interaction
     st.session_state.selected_index = physicians.index(st.session_state.selected_name)
 
 
@@ -113,21 +112,17 @@ div.stButton > button:hover {
 """
 st.markdown(light_btn_css, unsafe_allow_html=True)
 
-# Navigation buttons now update the index
+# Navigation buttons: only update the index to avoid state conflicts
 with col_prev:
     if st.button("⬅️ Prev", use_container_width=True):
         st.session_state.selected_index = max(0, st.session_state.selected_index - 1)
-        # REMOVED: st.session_state.selected_name = physicians[st.session_state.selected_index]
 
 with col_next:
     if st.button("Next ➡️", use_container_width=True):
         st.session_state.selected_index = min(len(physicians) - 1, st.session_state.selected_index + 1)
-        # REMOVED: st.session_state.selected_name = physicians[st.session_state.selected_index]
 
 
-# This line is now redundant as st.session_state.selected_name is managed by the selectbox
-# selected_name = physicians[st.session_state.selected_index]
-# Instead, just use the value from the selectbox's key:
+# Read the selected name directly from the state managed by the selectbox
 selected_name = st.session_state.selected_name
 
 
@@ -208,7 +203,7 @@ with colD:
     st.write(row["license_state"])
 
 # -------------------------
-# Citations Section (NEW SECTION FOR LINKS)
+# Citations Section
 # -------------------------
 st.markdown("<h2 style='margin-top:35px;'>🔗 Source Citations</h2>", unsafe_allow_html=True)
 
@@ -218,4 +213,4 @@ if citations:
     for i, url in enumerate(citations):
         st.markdown(f"**Source {i+1}:** [{url}]({url})")
 else:
-    st.write("No direct citations were provided by the enrichment model for this profile.")
+    st.write("No source citations were provided by the enrichment model for this profile.")
