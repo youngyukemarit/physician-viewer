@@ -32,22 +32,25 @@ st.markdown("""
 # -------------------------
 @st.cache_data
 def load_data():
-    # FIX 1: Change to the newly created, clean file
+    # Load the newly created, clean file which now includes citations
     df = pd.read_csv("v7_viewer/viewer_data.csv")
 
-    # FIX 2: Only include the columns we actually have and parse them
+    # List of columns that contain string representations of Python lists/dictionaries
     list_columns = [
         "cleaned.work_experience",
         "cleaned.residency",
-        "cleaned.medical_school"
+        "cleaned.medical_school",
+        "cleaned.citations" # INCLUDE THE NEW CITATIONS COLUMN
     ]
 
     for col in list_columns:
         # The data is a string representation of a list of dicts: '[{"employer": ...}]'
+        # ast.literal_eval safely converts this string back to a Python object.
         df[col] = df[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith("[") else [])
 
     return df
 
+# Load the data immediately
 df = load_data()
 
 # -------------------------
@@ -65,16 +68,22 @@ html, body, [class*="st-"] {
 st.markdown("<h1 style='font-weight:700;'>📘 Physician Profile Viewer</h1>", unsafe_allow_html=True)
 
 # -------------------------
-# Dropdown + Next/Prev Navigation (clean UI)
+# Dropdown + Next/Prev Navigation (Robust Initialization)
 # -------------------------
 physicians = sorted(df["cleaned.name"].fillna("Unknown").unique().tolist())
 
-# Initialize index
+# Robust Initialization to prevent the AttributeError on initial load
 if "selected_index" not in st.session_state:
     st.session_state.selected_index = 0
 
+if "selected_name" not in st.session_state or st.session_state.selected_name not in physicians:
+    st.session_state.selected_name = physicians[st.session_state.selected_index]
+
+
 def choose_physician():
+    # When the user changes the box, we update the index based on the new name
     st.session_state.selected_index = physicians.index(st.session_state.selected_name)
+
 
 # Row layout: dropdown on left, arrows far right
 col_dd, col_spacer, col_prev, col_next = st.columns([0.33, 0.47, 0.10, 0.10])
@@ -104,13 +113,17 @@ div.stButton > button:hover {
 """
 st.markdown(light_btn_css, unsafe_allow_html=True)
 
+# Navigation buttons now update the index which automatically updates the selectbox
 with col_prev:
     if st.button("⬅️ Prev", use_container_width=True):
         st.session_state.selected_index = max(0, st.session_state.selected_index - 1)
+        st.session_state.selected_name = physicians[st.session_state.selected_index]
 
 with col_next:
     if st.button("Next ➡️", use_container_width=True):
         st.session_state.selected_index = min(len(physicians) - 1, st.session_state.selected_index + 1)
+        st.session_state.selected_name = physicians[st.session_state.selected_index]
+
 
 selected_name = physicians[st.session_state.selected_index]
 
@@ -164,7 +177,6 @@ with col3:
 # -------------------------
 st.markdown("<h2 style='margin-top:35px;'>Details</h2>", unsafe_allow_html=True)
 
-# FIX 3: Removed column E (Insurance) and D (Emails) as they are not available in our enriched data
 colA, colB, colC, colD = st.columns(4)
 
 with colA:
@@ -174,7 +186,6 @@ with colA:
 
 with colB:
     st.markdown("**Doximity:**")
-    # FIX 4: Use the correct column name from the loaded data
     dox = row.get("cleaned.doximity_url.url", "N/A")
     if isinstance(dox, str) and dox.startswith("http"):
         st.markdown(f"[{dox}]({dox})")
@@ -183,13 +194,25 @@ with colB:
 
 with colC:
     st.markdown("**LinkedIn:**")
-    # FIX 5: Use the correct column name from the loaded data
     linkedin = row.get("cleaned.linkedin_url.url", "N/A")
     if isinstance(linkedin, str) and linkedin.startswith("http"):
         st.markdown(f"[{linkedin}]({linkedin})")
     else:
         st.write("N/A")
-        
+
 with colD:
     st.markdown("**License State:**")
     st.write(row["license_state"])
+
+# -------------------------
+# Citations Section (NEW SECTION FOR LINKS)
+# -------------------------
+st.markdown("<h2 style='margin-top:35px;'>🔗 Source Citations</h2>", unsafe_allow_html=True)
+
+citations = row["cleaned.citations"]
+
+if citations:
+    for i, url in enumerate(citations):
+        st.markdown(f"**Source {i+1}:** [{url}]({url})")
+else:
+    st.write("No direct citations were provided by the enrichment model for this profile.")
