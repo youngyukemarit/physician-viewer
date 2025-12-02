@@ -113,19 +113,22 @@ div.stButton > button:hover {
 """
 st.markdown(light_btn_css, unsafe_allow_html=True)
 
-# Navigation buttons now update the index which automatically updates the selectbox
+# Navigation buttons now update the index
 with col_prev:
     if st.button("⬅️ Prev", use_container_width=True):
         st.session_state.selected_index = max(0, st.session_state.selected_index - 1)
-        st.session_state.selected_name = physicians[st.session_state.selected_index]
+        # REMOVED: st.session_state.selected_name = physicians[st.session_state.selected_index]
 
 with col_next:
     if st.button("Next ➡️", use_container_width=True):
         st.session_state.selected_index = min(len(physicians) - 1, st.session_state.selected_index + 1)
-        st.session_state.selected_name = physicians[st.session_state.selected_index]
+        # REMOVED: st.session_state.selected_name = physicians[st.session_state.selected_index]
 
 
-selected_name = physicians[st.session_state.selected_index]
+# This line is now redundant as st.session_state.selected_name is managed by the selectbox
+# selected_name = physicians[st.session_state.selected_index]
+# Instead, just use the value from the selectbox's key:
+selected_name = st.session_state.selected_name
 
 
 # -------------------------
