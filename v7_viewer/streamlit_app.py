@@ -32,7 +32,7 @@ st.markdown("""
 # -------------------------
 @st.cache_data
 def load_data():
-    df = pd.read_csv("viewer_data.csv")
+    df = pd.read_csv("v7_viewer/viewer_data.csv")
 
     list_columns = [
         "cleaned.work_experience",
