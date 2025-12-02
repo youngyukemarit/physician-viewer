@@ -32,10 +32,8 @@ st.markdown("""
 # -------------------------
 @st.cache_data
 def load_data():
-    # Load the clean file
     df = pd.read_csv("v7_viewer/viewer_data.csv")
 
-    # List of columns that contain string representations of Python lists/dictionaries
     list_columns = [
         "cleaned.work_experience",
         "cleaned.residency",
@@ -44,12 +42,10 @@ def load_data():
     ]
 
     for col in list_columns:
-        # ast.literal_eval safely converts the string literal back to a Python object.
         df[col] = df[col].apply(lambda x: ast.literal_eval(x) if isinstance(x, str) and x.startswith("[") else [])
 
     return df
 
-# Load the data immediately
 df = load_data()
 
 # -------------------------
@@ -67,11 +63,11 @@ html, body, [class*="st-"] {
 st.markdown("<h1 style='font-weight:700;'>📘 Physician Profile Viewer</h1>", unsafe_allow_html=True)
 
 # -------------------------
-# Dropdown + Next/Prev Navigation (FINAL ROBUST VERSION)
+# Dropdown + Next/Prev Navigation (FINAL STABLE VERSION)
 # -------------------------
 physicians = sorted(df["cleaned.name"].fillna("Unknown").unique().tolist())
 
-# Robust Initialization to prevent the initial AttributeError
+# Robust Initialization
 if "selected_index" not in st.session_state:
     st.session_state.selected_index = 0
 
@@ -79,24 +75,22 @@ if "selected_name" not in st.session_state or st.session_state.selected_name not
     st.session_state.selected_name = physicians[st.session_state.selected_index]
 
 
-def choose_physician():
-    # This callback only runs when the selectbox value changes via user interaction
-    st.session_state.selected_index = physicians.index(st.session_state.selected_name)
+# We REMOVE the choose_physician() function and its on_change call.
 
 
 # Row layout: dropdown on left, arrows far right
 col_dd, col_spacer, col_prev, col_next = st.columns([0.33, 0.47, 0.10, 0.10])
 
 with col_dd:
+    # Use selected_index for the index, and bind the result to the key
     st.selectbox(
         "Choose Physician:",
         physicians,
         key="selected_name",
-        index=st.session_state.selected_index,
-        on_change=choose_physician
+        index=st.session_state.selected_index
     )
 
-# Light-mode button styling
+# Light-mode button styling (left unchanged)
 light_btn_css = """
 <style>
 div.stButton > button {
@@ -112,17 +106,22 @@ div.stButton > button:hover {
 """
 st.markdown(light_btn_css, unsafe_allow_html=True)
 
-# Navigation buttons: only update the index to avoid state conflicts
+
+# Navigation buttons: NOW THEY MANUALLY UPDATE BOTH STATE KEYS FOR RELIABILITY
 with col_prev:
     if st.button("⬅️ Prev", use_container_width=True):
-        st.session_state.selected_index = max(0, st.session_state.selected_index - 1)
+        new_index = max(0, st.session_state.selected_index - 1)
+        st.session_state.selected_index = new_index
+        st.session_state.selected_name = physicians[new_index] # Manually force the name update
 
 with col_next:
     if st.button("Next ➡️", use_container_width=True):
-        st.session_state.selected_index = min(len(physicians) - 1, st.session_state.selected_index + 1)
+        new_index = min(len(physicians) - 1, st.session_state.selected_index + 1)
+        st.session_state.selected_index = new_index
+        st.session_state.selected_name = physicians[new_index] # Manually force the name update
 
 
-# Read the selected name directly from the state managed by the selectbox
+# Read the selected name directly from the state managed by the selectbox/buttons
 selected_name = st.session_state.selected_name
 
 
@@ -171,7 +170,7 @@ with col3:
     show_section("🎓 Medical School", row["cleaned.medical_school"])
 
 # -------------------------
-# Details Section
+# Details Section (Unchanged)
 # -------------------------
 st.markdown("<h2 style='margin-top:35px;'>Details</h2>", unsafe_allow_html=True)
 
@@ -203,7 +202,7 @@ with colD:
     st.write(row["license_state"])
 
 # -------------------------
-# Citations Section
+# Citations Section (Unchanged)
 # -------------------------
 st.markdown("<h2 style='margin-top:35px;'>🔗 Source Citations</h2>", unsafe_allow_html=True)
 
